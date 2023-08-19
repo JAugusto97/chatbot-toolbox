@@ -56,16 +56,17 @@ class falcon_7b:
             device_map="cuda",
         )
 
-    def prompt(self, user_message, max_length=500, do_sample=True, top_k=10, num_return_sequences=1):
+    def prompt(self, user_message, max_new_tokens=500, do_sample=True, top_k=10, num_return_sequences=1):
         input_text = f"<|prompter|>{user_message}<|endoftext|><|assistant|>"
         sequences = self.pipeline(
             input_text,
-            max_length=max_length,
+            max_new_tokens=max_new_tokens,
             do_sample=do_sample,
             return_full_text=True,
             top_k=top_k,
             num_return_sequences=num_return_sequences,
             eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.eos_token_id
         )
         ans = "".join([seq["generated_text"] for seq in sequences])
         ans = ans.split("<|assistant|>")[1]
@@ -95,6 +96,7 @@ class falcon_40b:
             top_k=top_k,
             num_return_sequences=num_return_sequences,
             eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.eos_token_id
         )
         ans = "".join([seq["generated_text"] for seq in sequences])
         ans = ans.split("<|assistant|>")[1]
@@ -122,7 +124,8 @@ class oasst_pythia_12b():
             return_full_text=True,
             top_k=top_k,
             num_return_sequences=num_return_sequences,
-            eos_token_id=self.tokenizer.eos_token_id
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.eos_token_id
         )
         ans = "".join([seq["generated_text"] for seq in sequences])
         ans = ans.split("<|assistant|>")[1]
