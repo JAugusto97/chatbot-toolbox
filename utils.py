@@ -1,5 +1,5 @@
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, TextStreamer
 
 class llama2_orca_13b:
     def __init__(self):
@@ -25,8 +25,8 @@ class llama2_orca_13b:
         user_message,
         do_sample=True,
         top_p=0.95,
-        top_k=0,
-        max_new_tokens=500
+        top_k=50,
+        max_new_tokens=256
     ):
         prompt = f"""<|system|>{self.system_context}</s><|prompter|>{user_message}</s><|assistant|>"""
         inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
@@ -56,7 +56,7 @@ class falcon_7b:
             device_map="cuda",
         )
 
-    def prompt(self, user_message, max_new_tokens=500, do_sample=True, top_k=10, num_return_sequences=1):
+    def prompt(self, user_message, max_new_tokens=256, do_sample=True, top_k=50, num_return_sequences=1):
         input_text = f"<|prompter|>{user_message}<|endoftext|><|assistant|>"
         sequences = self.pipeline(
             input_text,
@@ -86,11 +86,11 @@ class falcon_40b:
             device_map="cuda",
         )
 
-    def prompt(self, user_message, max_length=500, do_sample=True, top_k=10, num_return_sequences=1):
+    def prompt(self, user_message, max_new_tokens=256, do_sample=True, top_k=50, num_return_sequences=1):
         input_text = f"<|prompter|>{user_message}<|endoftext|><|assistant|>"
         sequences = self.pipeline(
             input_text,
-            max_length=max_length,
+            max_new_tokens=max_new_tokens,
             do_sample=do_sample,
             return_full_text=True,
             top_k=top_k,
@@ -115,11 +115,11 @@ class oasst_pythia_12b():
             device_map="cuda",
         )
 
-    def prompt(self, user_message, max_length=500, do_sample=True, top_k=10, num_return_sequences=1):
+    def prompt(self, user_message, max_new_tokens=256, do_sample=True, top_k=50, num_return_sequences=1):
         input_text = f"<|prompter|>{user_message}<|endoftext|><|assistant|>"
         sequences = self.pipeline(
             input_text,
-            max_length=max_length,
+            max_new_tokens=max_new_tokens,
             do_sample=do_sample,
             return_full_text=True,
             top_k=top_k,
@@ -129,4 +129,65 @@ class oasst_pythia_12b():
         )
         ans = "".join([seq["generated_text"] for seq in sequences])
         ans = ans.split("<|assistant|>")[1]
+        return ans
+    
+class llama_v1_30b_instruct():
+    def __init__(self):
+        self.tokenizer = AutoTokenizer.from_pretrained("upstage/llama-30b-instruct-2048")
+        self.model = AutoModelForCausalLM.from_pretrained(
+            "upstage/llama-30b-instruct-2048",
+            device_map="auto",
+            torch_dtype=torch.float16,
+            load_in_8bit=True,
+            rope_scaling={"type": "dynamic", "factor": 2} # allows handling of longer inputs
+        )
+
+    def prompt(self, user_message, max_new_tokens, do_sample=True, top_k=50):
+        formatted_prompt = f"### User:\n{user_message}\n\n### Assistant:\n"
+        inputs = self.tokenizer(formatted_prompt, return_tensors="pt").to(self.model.device)
+        streamer = TextStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
+
+        output = self.model.generate(
+            **inputs,
+            do_sample=do_sample,
+            top_k=top_k,
+            max_new_tokens=max_new_tokens,
+            streamer=streamer,
+        )
+        output_text = self.tokenizer.decode(output[0], skip_special_tokens=True)
+        output_text = output_text.split("### Assistant:\n")[1]
+        return output_text
+    
+class llama_v2_13b_chat_hf():
+    def __init__(self):
+        model_name = "meta-llama/Llama-2-13b-chat-hf"
+       
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.pipeline = pipeline(
+            "text-generation",
+            model=model_name,
+            torch_dtype=torch.float16,
+            device_map="auto",
+
+        )
+
+    def prompt(self, user_message, temperature=0.1, max_new_tokens=256, do_sample=True, top_k=50, system_context=None):
+        if system_context is None:
+            system_context = "<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n<</SYS>>\n\n"
+        else:
+            system_context = f"<s>[INST] <<SYS>>\n{system_context}\n<</SYS>>\n\n"
+        prompt = f"{system_context} {user_message} [/INST] "
+        sequences = self.pipeline(
+            prompt,
+            do_sample=do_sample,
+            temperature=temperature,
+            max_new_tokens=max_new_tokens,
+            return_full_text=True,
+            top_k=top_k,
+            num_return_sequences=1,
+            eos_token_id=self.tokenizer.eos_token_id
+        )
+
+        ans = "".join([seq["generated_text"] for seq in sequences])
+        ans = ans.split("[/INST]")[1].strip()
         return ans
